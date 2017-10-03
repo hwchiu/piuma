@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"github.com/nfnt/resize"
 	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 )
@@ -59,65 +56,38 @@ func Optimize(originalUrl string, width uint, height uint, quality uint, pathtem
 	mu.Unlock()
 
 	var img image.Image
+	var imageHandler ImageHandler
 
-	if responseType == "image/jpeg" {
-		img, err = jpeg.Decode(reader)
-	} else if responseType == "image/png" {
-		img, err = png.Decode(reader)
-	} else {
+	imageHandler, err = NewImageHandler(responseType)
+	if err != nil {
 		os.Remove(newImageTempPath)
-		return "", "", errors.New("Format not supported")
+		return "", "", err
 	}
 
+	img, err = imageHandler.Decode(reader)
 	if err != nil {
 		os.Remove(newImageTempPath)
 		return "", "", errors.New("Error decoding response")
 	}
 
 	newImage := resize.Resize(width, height, img, resize.NearestNeighbor)
-
 	if err != nil {
 		os.Remove(newImageTempPath)
 		return "", "", errors.New("Error creating new image")
 	}
 
 	// Encode new image
-	if responseType == "image/jpeg" {
-		err = jpeg.Encode(newFileImg, newImage, nil)
-		if err != nil {
-			os.Remove(newImageTempPath)
-			return "", "", errors.New("Error encoding response")
-		}
-	} else if responseType == "image/png" {
-		err = png.Encode(newFileImg, newImage)
-		if err != nil {
-			os.Remove(newImageTempPath)
-			return "", "", errors.New("Error encoding response")
-		}
+	err = imageHandler.Encode(newFileImg, newImage)
+	if err != nil {
+		os.Remove(newImageTempPath)
+		return "", "", errors.New("Error encoding response")
 	}
 	newFileImg.Close()
 
-	if responseType == "image/jpeg" {
-		args := []string{fmt.Sprintf("--max=%d", quality), newImageTempPath}
-		cmd := exec.Command("jpegoptim", args...)
-		err := cmd.Run()
-		if err != nil {
-			os.Remove(newImageTempPath)
-			return "", "", errors.New("Jpegoptim command not working")
-		}
-	} else if responseType == "image/png" {
-		args := []string{newImageTempPath, "-f", "--ext=\"\""}
-		if quality != 100 {
-			var qualityMin = quality - 10
-			qualityParameter := fmt.Sprintf("--quality=%[1]d-%[2]d", qualityMin, quality)
-			args = append([]string{qualityParameter}, args...)
-		}
-		cmd := exec.Command("pngquant", args...)
-		err := cmd.Run()
-		if err != nil {
-			os.Remove(newImageTempPath)
-			return "", "", errors.New("Pngquant command not working")
-		}
+	err = imageHandler.Convert(newImageTempPath, quality)
+	if err != nil {
+		os.Remove(newImageTempPath)
+		return "", "", err
 	}
 
 	err = os.Rename(newImageTempPath, newImageRealPath)
