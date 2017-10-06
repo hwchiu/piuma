@@ -26,7 +26,8 @@ You can also change the default `port` and `mediapath`, type
 for more info.
 
 ## Docker Image
-You can also use docker images to run piuma service, type following command in your host
+You can also use docker images to run piuma service, type following command in your host  
+
     $ docker run --name piuma -p 8080:8080 hwchiu/piuma
 
 ## Usage
